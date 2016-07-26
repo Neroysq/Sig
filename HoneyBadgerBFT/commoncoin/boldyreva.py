@@ -60,13 +60,18 @@ class TBLSPublicKey(object):
 
     def lagrange(self, S, j):
         # Assert S is a subset of range(0,self.l)
-        assert len(S) == self.k
-        assert type(S) is set
-        assert S.issubset(range(0,self.l))
+        # assert len(S) == self.k
+        # assert type(S) is set
+        # assert S.issubset(range(0,self.l))
+        if (len(S) != self.k) or (not type(S) is set) or (not S.issubset(range(0, self.l))) :
+            return -1 
         S = sorted(S)
 
-        assert j in S
-        assert 0 <= j < self.l
+       
+        # assert j in S
+        # assert 0 <= j < self.l
+        if (not j in S) or (not 0 <= j < self.l) :
+            return -1;
         mul = lambda a,b: a*b
         num = reduce(mul, [0 - jj - 1 for jj in S if jj != j], ONE)
         den = reduce(mul, [j - jj     for jj in S if jj != j], ONE)
@@ -77,19 +82,25 @@ class TBLSPublicKey(object):
         return group.hash(m, G1)
 
     def verify_share(self, sig, i, h):
-        assert 0 <= i < self.l
+        if (not 0 <= i < self.l) :
+            return False
+        # assert 0 <= i < self.l
         B = self.VKs[i]
-        assert pair(sig, g2) == pair(h, B)
+        if pair(sig, g2) != pair(h, B) :
+            return False
+        # assert pair(sig, g2) == pair(h, B)
         return True
 
     def verify_signature(self, sig, h):
-        assert pair(sig, g2) == pair(h, self.VK)  # let's just count the time
-        return True
+        return pair(sig, g2) == pair(h, self.VK)  # let's just count the time
+        # return True
 
     def combine_shares(self, sigs):
         # sigs: a mapping from idx -> sig
         S = set(sigs.keys())
-        assert S.issubset(range(self.l))
+        if not S.issubset(range(self.l)) :
+            return False
+        # assert S.issubset(range(self.l))
 
         mul = lambda a,b: a*b
         res = reduce(mul, 
@@ -170,7 +181,7 @@ def test():
 
     for SK in SKs:
         sigs[SK.i] = SK.sign(h)
-	print sigs[SK.i]
+        print sigs[SK.i]
 
     SS = range(PK.l)
     for i in range(1):
@@ -180,6 +191,27 @@ def test():
         assert PK.verify_signature(sig, h)
 
 def gen(players, k, plaintext):
+    global PK, SKs
+    PK, SKs = dealer(players, k)
+
+    global sigs, h
+    sigs = {}
+    h = PK.hash_message(plaintext)
+    h.initPP()
+    for SK in SKs :
+        sigs[SK.i] = SK.sign(h)
+
+    S = range(k)
+    sig = PK.combine_shares(dict((s,sigs[s]) for s in S))
+
+    output = {}
+    output['h'] = serialize(h)
+    output['VK'] = serialize(PK.VK) # 2
+    output['sig'] = serialize(sig) # 1
+        
+    return output
+    
+def gen2(players, k, plaintext):
     global PK, SKs
     PK, SKs = dealer(players, k)
 
@@ -223,3 +255,26 @@ def check(players, k, lh, lPK, lSKs, lsigs) :
         assert PK.verify_signature(sig, h)
         
     return True
+
+def verify(VK, h, sig) :
+    VK = deserialize2(VK)
+    sig = deserialize1(sig)
+    h = deserialize1(h)
+    return pair(sig, g2) == pair(h, VK)
+    
+def verify2(players, k, lh, lPK, lsigs) :
+    global PK
+    PK = lPK
+    global sigs, h
+    sigs = {k: deserialize1(v) for k, v in lsigs.items()}
+    h = deserialize1(lh)
+    
+    for i, sig in sigs.items() :
+        if not PK.verify_share(sig, i, h) :
+            return False
+    print sigs
+    sig = PK.combine_shares(sigs)
+    if sig == False :
+        return False
+    return PK.verify_signature(sig, h)
+    
